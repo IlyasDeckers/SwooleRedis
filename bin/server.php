@@ -68,7 +68,7 @@ if (isset($options['aof-rewrite-min-size'])) {
     $config['aof_rewrite_min_size'] = (int)$options['aof-rewrite-min-size'];
 }
 
-// Create and start the server
+// ASCII art logo for a more professional look
 echo <<<'EOT'
   _____                    _      _____          _ _     
  / ____|                  | |    |  __ \        | (_)    
@@ -95,9 +95,9 @@ echo "   Example: redis-cli -p {$port} SHUTDOWN\n";
 echo "3. Use 'kill " . getmypid() . "' from another terminal\n";
 echo "\n";
 echo "Starting server...\n";
-echo "Press Ctrl+C to stop the server\n\n";
 
-$server = new Server($host, $port, $config);
+// Create and start the server
+$r = new Server($host, $port, $config);
 
-// Start the server
-$server->start();
+// Start the server - signal handling is now inside the Server class
+$r->start();

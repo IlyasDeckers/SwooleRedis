@@ -4,6 +4,7 @@ namespace Ody\SwooleRedis\Command;
 
 use Ody\SwooleRedis\Protocol\ResponseFormatter;
 use Ody\SwooleRedis\Persistence\PersistenceManager;
+use Ody\SwooleRedis\Server;
 
 /**
  * Implements Redis server admin commands
@@ -13,6 +14,7 @@ class ServerAdminCommands implements CommandInterface
     private ResponseFormatter $formatter;
     private PersistenceManager $persistenceManager;
     private array $serverInfo;
+    private ?Server $server = null;
 
     public function __construct(
         ResponseFormatter $formatter,
@@ -22,6 +24,14 @@ class ServerAdminCommands implements CommandInterface
         $this->formatter = $formatter;
         $this->persistenceManager = $persistenceManager;
         $this->serverInfo = $serverInfo;
+    }
+
+    /**
+     * Set the server instance for shutdown operations
+     */
+    public function setServer(Server $server): void
+    {
+        $this->server = $server;
     }
 
     /**
@@ -47,6 +57,9 @@ class ServerAdminCommands implements CommandInterface
 
             case 'INFO':
                 return $this->info($args);
+
+            case 'SHUTDOWN':
+                return $this->shutdown($args);
 
             default:
                 return $this->formatter->error("Unknown command '{$command}'");
@@ -163,6 +176,54 @@ class ServerAdminCommands implements CommandInterface
         }
 
         return $this->formatter->bulkString($output);
+    }
+
+    /**
+     * Implement SHUTDOWN command
+     * Saves data and shuts down the server
+     */
+    private function shutdown(array $args = []): string
+    {
+        $saveOption = '';
+
+        if (!empty($args)) {
+            $saveOption = strtoupper($args[0]);
+        }
+
+        // Check if we should save before shutdown
+        $saveBeforeShutdown = true;
+
+        if ($saveOption === 'NOSAVE') {
+            $saveBeforeShutdown = false;
+        } else if ($saveOption === 'SAVE') {
+            $saveBeforeShutdown = true;
+        }
+
+        // Send OK to the client before shutting down
+        $response = $this->formatter->simpleString("OK - Shutting down");
+
+        // Use go to shut down after responding to the client
+        go(function () use ($saveBeforeShutdown) {
+            // Sleep for a moment to allow the response to be sent
+            usleep(100000); // 100ms
+
+            // Save if requested
+            if ($saveBeforeShutdown) {
+                echo "Saving data before shutdown...\n";
+                $this->persistenceManager->forceSave();
+            }
+
+            // Shut down the server if we have a reference
+            if ($this->server !== null) {
+                echo "Shutting down server via SHUTDOWN command...\n";
+                $this->server->stop();
+            } else {
+                echo "No server reference available, terminating process...\n";
+                exit(0);
+            }
+        });
+
+        return $response;
     }
 
     /**
