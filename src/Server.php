@@ -136,6 +136,18 @@ class Server
             }
             echo "Client disconnected: {$fd}\n";
         });
+
+        $this->server->on('shutdown', function () {
+            echo "Server shutdown event triggered\n";
+            // This event is too late for persistence as the server is already stopping
+            // but we can do any final cleanup here
+        });
+
+        // Handle Swoole worker stop event
+        $this->server->on('WorkerStop', function ($server, $workerId) {
+            echo "Worker {$workerId} is stopping...\n";
+            // If needed, we could perform per-worker cleanup
+        });
     }
 
     private function startExpirationChecker(): void
@@ -147,18 +159,68 @@ class Server
 
     public function start(): void
     {
-        $this->persistenceManager->loadData();
         echo "SwooleRedis server starting on {$this->host}:{$this->port}\n";
+
+        // Load data from persistence storage
+        $this->persistenceManager->loadData();
+
+        // Set up signal handling for graceful shutdown
+        $this->setupSignalHandling();
+
+        // Start the server
         $this->server->start();
     }
 
+    /**
+     * Stop the server gracefully
+     */
     public function stop(): void
     {
-        // Clean up persistence
+        echo "Stopping SwooleRedis server...\n";
+
+        // Save any pending data
         $this->persistenceManager->shutdown();
 
-        // Stop the server
+        // Close all connections and stop the server
         $this->server->shutdown();
-        echo "SwooleRedis server stopped\n";
+
+        echo "SwooleRedis server stopped gracefully\n";
+    }
+
+    /**
+     * Set up signal handling for graceful shutdown
+     */
+    private function setupSignalHandling(): void
+    {
+        // Use Swoole Process::signal for signal handling
+        if (extension_loaded('pcntl') && method_exists('Swoole\\Process', 'signal')) {
+            // Handle SIGTERM (kill command)
+            \Swoole\Process::signal(SIGTERM, function () {
+                echo "Received SIGTERM, shutting down...\n";
+                $this->stop();
+                exit(0);
+            });
+
+            // Handle SIGINT (Ctrl+C)
+            \Swoole\Process::signal(SIGINT, function () {
+                echo "Received SIGINT (Ctrl+C), shutting down...\n";
+                $this->stop();
+                exit(0);
+            });
+
+            echo "Signal handlers registered for graceful shutdown\n";
+        } else {
+            echo "Warning: pcntl extension not loaded or Swoole\\Process::signal not available\n";
+            echo "CTRL+C handling may not work correctly\n";
+        }
     }
 }
+
+// Register a shutdown function as a last resort
+register_shutdown_function(function () {
+    echo "PHP shutdown function triggered\n";
+    // Force persistence shutdown if it wasn't already done
+    if (isset($this->persistenceManager)) {
+        $this->persistenceManager->shutdown();
+    }
+});

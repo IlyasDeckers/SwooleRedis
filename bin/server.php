@@ -1,7 +1,7 @@
 <?php
 
 /**
- * SwooleRedis server startup script
+ * SwooleRedis server startup script with improved signal handling
  */
 
 use Ody\SwooleRedis\Server;
@@ -9,8 +9,14 @@ use Ody\SwooleRedis\Server;
 // Load autoloader
 require __DIR__ . '/../vendor/autoload.php';
 
+// Basic check for pcntl extension
+if (!extension_loaded('pcntl')) {
+    echo "Warning: pcntl extension is not loaded.\n";
+    echo "Signal handling (Ctrl+C) may not work correctly.\n";
+    echo "You may need to use 'kill' to stop the server process.\n\n";
+}
+
 // Parse command line arguments
-$options = getopt('h:p:', ['host:', 'port:']);
 $shortOptions = 'h:p:d:';
 $longOptions = [
     'host:', 'port:', 'dir:',
@@ -62,21 +68,36 @@ if (isset($options['aof-rewrite-min-size'])) {
     $config['aof_rewrite_min_size'] = (int)$options['aof-rewrite-min-size'];
 }
 
-// Create and start the server with configuration
+// Create and start the server
+echo <<<'EOT'
+  _____                    _      _____          _ _     
+ / ____|                  | |    |  __ \        | (_)    
+| (_____      _____   ___ | | ___| |__) |___  __| |_ ___ 
+ \___ \ \ /\ / / _ \ / _ \| |/ _ \  _  // _ \/ _` | / __|
+ ____) \ V  V / (_) | (_) | |  __/ | \ \  __/ (_| | \__ \
+|_____/ \_/\_/ \___/ \___/|_|\___|_|  \_\___|\__,_|_|___/
+                                                         
+EOT;
+
+echo "\n";
+echo "SwooleRedis Server v1.0.0\n";
+echo "=========================\n";
+echo "Server will listen on: {$host}:{$port}\n";
+echo "Persistence directory: {$config['persistence_dir']}\n";
+echo "\n";
+echo "RDB Persistence: " . ($config['rdb_enabled'] ?? true ? "Enabled" : "Disabled") . "\n";
+echo "AOF Persistence: " . ($config['aof_enabled'] ?? false ? "Enabled" : "Disabled") . "\n";
+echo "\n";
+echo "How to stop the server:\n";
+echo "1. Press Ctrl+C in this terminal\n";
+echo "2. Use 'SHUTDOWN' command from a Redis client\n";
+echo "   Example: redis-cli -p {$port} SHUTDOWN\n";
+echo "3. Use 'kill " . getmypid() . "' from another terminal\n";
+echo "\n";
+echo "Starting server...\n";
+echo "Press Ctrl+C to stop the server\n\n";
+
 $server = new Server($host, $port, $config);
-
-// Add signal handling for graceful shutdown
-pcntl_signal(SIGTERM, function () use ($server) {
-    echo "Received SIGTERM, shutting down...\n";
-    $server->stop();
-    exit(0);
-});
-
-pcntl_signal(SIGINT, function () use ($server) {
-    echo "Received SIGINT, shutting down...\n";
-    $server->stop();
-    exit(0);
-});
 
 // Start the server
 $server->start();
