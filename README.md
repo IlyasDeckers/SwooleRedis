@@ -73,6 +73,87 @@ $client->close();
 
 See `examples/basic_usage.php` for more examples.
 
+## Data Persistence
+
+SwooleRedis now supports data persistence similar to Redis with two complementary methods:
+
+### RDB (Redis Database)
+
+RDB persistence performs point-in-time snapshots of your dataset at specified intervals. This is useful for:
+
+- Backups
+- Disaster recovery
+- Data migration
+
+The RDB file is compact and ideal for backups. It's the default persistence method.
+
+### AOF (Append Only File)
+
+AOF persistence logs every write operation received by the server. It can be replayed on server restart to reconstruct the original dataset. This provides:
+
+- Better durability (minimize data loss)
+- Safer operations (every change is logged)
+- Easier debugging (see all operations)
+
+AOF files are typically larger than RDB files but provide better durability.
+
+### Configuration Options
+
+You can configure persistence when starting the server:
+
+```bash
+# Enable RDB with custom settings
+php bin/server.php --rdb-enabled=true --rdb-filename=dump.rdb --rdb-save-seconds=900 --rdb-min-changes=10
+
+# Enable AOF with custom settings
+php bin/server.php --aof-enabled=true --aof-filename=appendonly.aof --aof-fsync=everysec
+
+# Enable both persistence methods
+php bin/server.php --rdb-enabled=true --aof-enabled=true --dir=/path/to/data
+```
+
+Available options:
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--dir` | Directory where persistence files are stored | `/tmp` |
+| `--rdb-enabled` | Enable RDB persistence | `true` |
+| `--rdb-filename` | RDB filename | `dump.rdb` |
+| `--rdb-save-seconds` | Save interval in seconds | `900` (15 min) |
+| `--rdb-min-changes` | Minimum number of changes before saving | `1` |
+| `--aof-enabled` | Enable AOF persistence | `false` |
+| `--aof-filename` | AOF filename | `appendonly.aof` |
+| `--aof-fsync` | Fsync strategy (always, everysec, no) | `everysec` |
+| `--aof-rewrite-seconds` | AOF rewrite interval in seconds | `3600` (1 hour) |
+| `--aof-rewrite-min-size` | Minimum AOF file size before rewrite | `67108864` (64MB) |
+
+### Administration Commands
+
+SwooleRedis adds several server administration commands to manage persistence:
+
+- `SAVE` - Force a synchronous save
+- `BGSAVE` - Start a background save
+- `LASTSAVE` - Get the timestamp of the last successful save
+- `INFO` - Get information about the server, including persistence stats
+
+Example:
+
+```
+> SAVE
+OK
+> INFO persistence
+# persistence
+rdb_changes_since_last_save:0
+rdb_last_save_time:1627984501
+rdb_last_save_status:ok
+aof_enabled:1
+aof_rewrite_in_progress:0
+aof_last_rewrite_time_sec:-1
+aof_current_size:1024
+aof_pending_rewrite:0
+```
+
+
 ## Architecture
 
 SwooleRedis implements a modular architecture:

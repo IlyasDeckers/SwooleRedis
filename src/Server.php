@@ -3,6 +3,7 @@
 namespace Ody\SwooleRedis;
 
 use Ody\SwooleRedis\Command\CommandFactory;
+use Ody\SwooleRedis\Persistence\PersistenceManager;
 use Ody\SwooleRedis\Protocol\CommandParser;
 use Ody\SwooleRedis\Protocol\ResponseFormatter;
 use Ody\SwooleRedis\Storage\KeyExpiry;
@@ -18,6 +19,7 @@ class Server
     private CommandParser $commandParser;
     private CommandFactory $commandFactory;
     private ResponseFormatter $responseFormatter;
+    private PersistenceManager $persistenceManager;
     private StringStorage $stringStorage;
     private HashStorage $hashStorage;
     private ListStorage $listStorage;
@@ -26,10 +28,11 @@ class Server
     private string $host;
     private int $port;
 
-    public function __construct(string $host = '127.0.0.1', int $port = 6380)
+    public function __construct(string $host = '127.0.0.1', int $port = 6380, array $config = [])
     {
         $this->host = $host;
         $this->port = $port;
+        $this->config = $config;
 
         // Initialize components
         $this->stringStorage = new StringStorage();
@@ -38,13 +41,38 @@ class Server
         $this->keyExpiry = new KeyExpiry();
         $this->commandParser = new CommandParser();
         $this->responseFormatter = new ResponseFormatter();
+
+        // Initialize persistence manager
+        $persistenceConfig = [
+            'dir' => $config['persistence_dir'] ?? '/tmp',
+            'rdb_enabled' => $config['rdb_enabled'] ?? true,
+            'rdb_filename' => $config['rdb_filename'] ?? 'dump.rdb',
+            'rdb_save_seconds' => $config['rdb_save_seconds'] ?? 900,
+            'rdb_min_changes' => $config['rdb_min_changes'] ?? 1,
+            'aof_enabled' => $config['aof_enabled'] ?? false,
+            'aof_filename' => $config['aof_filename'] ?? 'appendonly.aof',
+            'aof_fsync' => $config['aof_fsync'] ?? 'everysec',
+            'aof_rewrite_seconds' => $config['aof_rewrite_seconds'] ?? 3600,
+            'aof_rewrite_min_size' => $config['aof_rewrite_min_size'] ?? 64 * 1024 * 1024,
+        ];
+
+        $this->persistenceManager = new PersistenceManager($persistenceConfig);
+        $this->persistenceManager->setStorageRepositories(
+            $this->stringStorage,
+            $this->hashStorage,
+            $this->listStorage,
+            $this->keyExpiry
+        );
+
+        // Initialize command factory with persistence manager
         $this->commandFactory = new CommandFactory(
             $this->stringStorage,
             $this->hashStorage,
             $this->listStorage,
             $this->keyExpiry,
             $this->subscribers,
-            $this->responseFormatter
+            $this->responseFormatter,
+            $this->persistenceManager
         );
 
         // Initialize Swoole server
@@ -53,7 +81,7 @@ class Server
             'worker_num' => swoole_cpu_num(),
             'max_conn' => 10000,
             'backlog' => 128,
-            'log_level' => SWOOLE_LOG_INFO, // Add logging for debugging
+            'log_level' => SWOOLE_LOG_INFO,
             'log_file' => '/tmp/swoole_redis.log',
             'heartbeat_check_interval' => 60,
             'heartbeat_idle_time' => 120,
@@ -87,8 +115,13 @@ class Server
             // Need to pass the original command name as the first argument
             $args = array_merge([$command['command']], $command['args']);
             $response = $handler->execute($fd, $args);
+
+            // Log the command for persistence
+            $this->persistenceManager->logWriteCommand($command['command'], $command['args']);
+
             $server->send($fd, $response);
         });
+
 
         $this->server->on('close', function ($server, $fd) {
             // Unsubscribe if the client was subscribed to any channels
@@ -114,7 +147,18 @@ class Server
 
     public function start(): void
     {
+        $this->persistenceManager->loadData();
         echo "SwooleRedis server starting on {$this->host}:{$this->port}\n";
         $this->server->start();
+    }
+
+    public function stop(): void
+    {
+        // Clean up persistence
+        $this->persistenceManager->shutdown();
+
+        // Stop the server
+        $this->server->shutdown();
+        echo "SwooleRedis server stopped\n";
     }
 }

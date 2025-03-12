@@ -18,6 +18,22 @@ class KeyExpiry
     }
 
     /**
+     * Get all expiry data
+     *
+     * @return array Associative array of key => expiry timestamp
+     */
+    public function getAllExpiry(): array
+    {
+        $result = [];
+
+        foreach ($this->expiryTable as $key => $row) {
+            $result[$key] = $row['expire_at'];
+        }
+
+        return $result;
+    }
+
+    /**
      * Set expiration time for a key
      *
      * @param string $key The key to set expiration for

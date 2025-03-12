@@ -20,6 +20,29 @@ class HashStorage implements StorageInterface
     }
 
     /**
+     * Get all hash keys in the storage
+     *
+     * @return array Array of unique hash keys
+     */
+    public function getAllKeys(): array
+    {
+        $keys = [];
+        $processedKeys = [];
+
+        foreach ($this->table as $hashId => $row) {
+            $key = $row['key'];
+
+            // Only add each key once
+            if (!isset($processedKeys[$key])) {
+                $keys[] = $key;
+                $processedKeys[$key] = true;
+            }
+        }
+
+        return $keys;
+    }
+
+    /**
      * Set a field in a hash
      *
      * @param string $key The hash key

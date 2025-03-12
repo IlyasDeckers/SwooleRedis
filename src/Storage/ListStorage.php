@@ -2,29 +2,62 @@
 
 namespace Ody\SwooleRedis\Storage;
 
+use Swoole\Table;
+
 /**
  * Storage for list values
  */
 class ListStorage implements StorageInterface
 {
-    private \Swoole\Table $metaTable;
-    private \Swoole\Table $itemTable;
+    private Table $metaTable;
+    private Table $itemTable;
 
     public function __construct(int $tableSize = 1024 * 1024)
     {
         // Initialize metadata table for lists
-        $this->metaTable = new \Swoole\Table($tableSize);
-        $this->metaTable->column('head', \Swoole\Table::TYPE_INT);
-        $this->metaTable->column('tail', \Swoole\Table::TYPE_INT);
-        $this->metaTable->column('size', \Swoole\Table::TYPE_INT);
+        $this->metaTable = new Table($tableSize);
+        $this->metaTable->column('head', Table::TYPE_INT);
+        $this->metaTable->column('tail', Table::TYPE_INT);
+        $this->metaTable->column('size', Table::TYPE_INT);
         $this->metaTable->create();
 
         // Initialize item table for list elements
-        $this->itemTable = new \Swoole\Table($tableSize * 10); // More items than lists
-        $this->itemTable->column('list_key', \Swoole\Table::TYPE_STRING, 128);
-        $this->itemTable->column('index', \Swoole\Table::TYPE_INT);
-        $this->itemTable->column('value', \Swoole\Table::TYPE_STRING, 1024);
+        $this->itemTable = new Table($tableSize * 10); // More items than lists
+        $this->itemTable->column('list_key', Table::TYPE_STRING, 128);
+        $this->itemTable->column('index', Table::TYPE_INT);
+        $this->itemTable->column('value', Table::TYPE_STRING, 1024);
         $this->itemTable->create();
+    }
+
+    /**
+     * Get all list keys in the storage
+     *
+     * @return array Array of list keys
+     */
+    public function getAllKeys(): array
+    {
+        $keys = [];
+
+        foreach ($this->metaTable as $key => $value) {
+            $keys[] = $key;
+        }
+
+        return $keys;
+    }
+
+    /**
+     * Get metadata for a specific list
+     *
+     * @param string $key The list key
+     * @return array|null Metadata array or null if not found
+     */
+    public function getMetadata(string $key): ?array
+    {
+        if (!$this->metaTable->exist($key)) {
+            return null;
+        }
+
+        return $this->metaTable->get($key);
     }
 
     /**

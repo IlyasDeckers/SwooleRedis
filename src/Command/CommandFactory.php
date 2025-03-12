@@ -2,6 +2,7 @@
 
 namespace Ody\SwooleRedis\Command;
 
+use Ody\SwooleRedis\Persistence\PersistenceManager;
 use Ody\SwooleRedis\Storage\StringStorage;
 use Ody\SwooleRedis\Storage\HashStorage;
 use Ody\SwooleRedis\Storage\ListStorage;
@@ -17,13 +18,18 @@ class CommandFactory
     private array $subscribers;
     private ResponseFormatter $responseFormatter;
 
+    private PersistenceManager $persistenceManager;
+
+    private array $serverInfo = [];
+
     public function __construct(
         StringStorage $stringStorage,
         HashStorage $hashStorage,
         ListStorage $listStorage,
         KeyExpiry $keyExpiry,
         array &$subscribers,
-        ResponseFormatter $responseFormatter
+        ResponseFormatter $responseFormatter,
+        PersistenceManager $persistenceManager
     ) {
         $this->stringStorage = $stringStorage;
         $this->hashStorage = $hashStorage;
@@ -31,6 +37,18 @@ class CommandFactory
         $this->keyExpiry = $keyExpiry;
         $this->subscribers = &$subscribers;
         $this->responseFormatter = $responseFormatter;
+        $this->persistenceManager = $persistenceManager;
+
+        // Initialize server info
+        $this->serverInfo = [
+            'start_time' => time(),
+            'connections' => 0,
+            'commands' => 0,
+            'ops_per_sec' => 0,
+            'expired_keys' => 0,
+            'keyspace_hits' => 0,
+            'keyspace_misses' => 0,
+        ];
     }
 
     public function create(string $commandName): CommandInterface
@@ -38,6 +56,9 @@ class CommandFactory
         // We need to pass the original command name to the handler classes
         $originalCommand = $commandName;
         $commandName = strtoupper($commandName);
+
+        // Update command stats
+        $this->updateServerStats('commands');
 
         switch ($commandName) {
             // String commands
@@ -94,9 +115,26 @@ class CommandFactory
                     $this->responseFormatter
                 );
                 return $pubSubCommands;
+            // Server admin commands
+            case 'SAVE':
+            case 'BGSAVE':
+            case 'LASTSAVE':
+            case 'INFO':
+                return new ServerAdminCommands(
+                    $this->responseFormatter,
+                    $this->persistenceManager,
+                    $this->serverInfo
+                );
 
             default:
                 return new UnknownCommand($this->responseFormatter, $originalCommand);
+        }
+    }
+
+    public function updateServerStats(string $type, $value = 1): void
+    {
+        if (isset($this->serverInfo[$type])) {
+            $this->serverInfo[$type] += $value;
         }
     }
 }
