@@ -153,6 +153,58 @@ aof_current_size:1024
 aof_pending_rewrite:0
 ```
 
+## Memory Management
+
+SwooleRedis dynamically allocates memory based on your system's available resources. This ensures optimal performance across different hardware configurations, from small VPS instances to large dedicated servers.
+
+### Dynamic Memory Allocation
+
+- **Automatic Sizing**: By default, SwooleRedis detects your system's available memory and allocates appropriate amounts for different data structures.
+- **Intelligent Distribution**: Memory is distributed proportionally among different storage types (strings, hashes, lists, etc.) based on typical usage patterns.
+- **Resource Protection**: The system avoids over-allocation to prevent out-of-memory errors and system instability.
+
+### Memory Configuration Options
+
+You can override the automatic memory allocation with these command-line options:
+
+```bash
+# Set PHP memory limit (useful for constrained environments)
+php bin/server.php --memory-limit=256M
+
+# Configure specific table sizes (in number of entries)
+php bin/server.php --memory-string-table-size=10000
+php bin/server.php --memory-hash-table-size=5000
+php bin/server.php --memory-list-table-size=1000
+php bin/server.php --memory-expiry-table-size=2000
+
+# Combined example for a low-memory environment
+php bin/server.php --memory-limit=128M --memory-string-table-size=1024 --memory-hash-table-size=1024
+```
+
+### Memory Usage Monitoring
+
+You can monitor memory usage through the INFO command:
+
+```
+> INFO memory
+# memory
+swoole_used_memory:5623808
+swoole_used_memory_peak:6172352
+total_system_memory:8589934592
+used_memory_lua:0
+used_memory_scripts:0
+```
+
+### Recommendations for Different Environments
+
+| Environment | RAM | Recommended Configuration |
+|-------------|-----|---------------------------|
+| Small VPS   | 512MB | `--memory-limit=256M --memory-string-table-size=1024` |
+| Standard Server | 2-4GB | Default settings |
+| High-Performance | 8GB+ | `--memory-string-table-size=1000000 --memory-hash-table-size=500000` |
+
+For production environments with specific memory constraints, we recommend starting with conservative values and monitoring performance before gradually increasing allocation as needed.
+
 
 ## Architecture
 
