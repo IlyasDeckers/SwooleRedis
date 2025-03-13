@@ -119,7 +119,6 @@ class PersistenceManager
                 // If AOF load was successful, we don't need to load RDB
                 if ($result) {
                     echo "Data loaded from AOF file\n";
-                    $this->startPersistenceTimers();
                     return true;
                 }
             }
@@ -137,34 +136,35 @@ class PersistenceManager
             }
         }
 
-        // Start timers regardless of whether loading succeeded
-        $this->startPersistenceTimers();
+        // Note: We no longer start timers here
+        // They will be started by the server after it fully starts
 
         return $result;
     }
 
     /**
      * Start timers for automatic persistence operations
+     * This should be called after the server has started to avoid event loop conflicts
      */
-    private function startPersistenceTimers(): void
+    public function startPersistenceTimers(): void
     {
         // Set up RDB save timer
         if ($this->rdbPersistence !== null && $this->config['rdb_save_seconds'] > 0) {
-            $this->rdbSaveTimerId = Timer::tick($this->config['rdb_save_seconds'] * 1000, function () {
+            $this->rdbSaveTimerId = \Swoole\Timer::tick($this->config['rdb_save_seconds'] * 1000, function () {
                 $this->backgroundSave();
             });
         }
 
         // Set up AOF rewrite timer
         if ($this->aofPersistence !== null && $this->config['aof_rewrite_seconds'] > 0) {
-            $this->aofRewriteTimerId = Timer::tick($this->config['aof_rewrite_seconds'] * 1000, function () {
+            $this->aofRewriteTimerId = \Swoole\Timer::tick($this->config['aof_rewrite_seconds'] * 1000, function () {
                 $this->checkAndRewriteAof();
             });
         }
 
         // Set up AOF fsync timer if using 'everysec'
         if ($this->aofPersistence !== null && $this->config['aof_fsync'] === 'everysec') {
-            Timer::tick(1000, function () {
+            \Swoole\Timer::tick(1000, function () {
                 $this->aofPersistence->save();
             });
         }

@@ -40,10 +40,10 @@ class Server
     private function initialize(): void
     {
         // Initialize components
-        $this->stringStorage = new StringStorage();
-        $this->hashStorage = new HashStorage();
-        $this->listStorage = new ListStorage();
-        $this->keyExpiry = new KeyExpiry();
+        $this->stringStorage = new StringStorage(1024);
+        $this->hashStorage = new HashStorage(1024);
+        $this->listStorage = new ListStorage(1024);
+        $this->keyExpiry = new KeyExpiry(1024);
         $this->commandParser = new CommandParser();
         $this->responseFormatter = new ResponseFormatter();
 
@@ -112,6 +112,49 @@ class Server
         echo "SwooleRedis server stopped gracefully\n";
     }
 
+    /**
+     * Set up signal handling for graceful shutdown
+     */
+    private function setupSignalHandling(): void
+    {
+        // Store reference to $this to use in closures
+        $self = $this;
+
+        // Use standard PHP pcntl signal handling
+        if (extension_loaded('pcntl')) {
+            // Handle SIGTERM (kill command)
+            pcntl_signal(SIGTERM, function () use ($self) {
+                echo "Received SIGTERM, shutting down...\n";
+                $self->stop();
+                exit(0);
+            });
+
+            // Handle SIGINT (Ctrl+C)
+            pcntl_signal(SIGINT, function () use ($self) {
+                echo "Received SIGINT (Ctrl+C), shutting down...\n";
+                $self->stop();
+                exit(0);
+            });
+
+            // Enable asynchronous signal handling
+            pcntl_async_signals(true);
+
+            echo "Signal handlers registered for graceful shutdown\n";
+        } else {
+            echo "Warning: pcntl extension not loaded\n";
+            echo "CTRL+C handling may not work correctly\n";
+        }
+
+        // Register a shutdown function that doesn't use $this
+        register_shutdown_function(function () use ($self) {
+            echo "PHP shutdown function triggered\n";
+            // Only stop if the server is initialized
+            if (isset($self) && method_exists($self, 'stop')) {
+                $self->stop();
+            }
+        });
+    }
+
     public function start(): void
     {
         echo "SwooleRedis server starting on {$this->host}:{$this->port}\n";
@@ -175,30 +218,20 @@ class Server
             echo "Client disconnected: {$fd}\n";
         });
 
-        // Simple signal handling that shouldn't start the event loop
-        if (extension_loaded('pcntl')) {
-            $self = $this;
-            pcntl_signal(SIGTERM, function() use ($self) {
-                $self->stop();
-                exit();
-            });
+        // Set up signal handling for graceful shutdown
+        $this->setupSignalHandling();
 
-            pcntl_signal(SIGINT, function() use ($self) {
-                $self->stop();
-                exit();
-            });
-
-            // Enable processing of pending signals
-            pcntl_async_signals(true);
-
-            echo "Signal handlers registered for graceful shutdown\n";
-        }
-
-        // Expiration checker using tick() after server starts
+        // Start expiration checker and persistence timers after server starts
         $this->server->on('start', function ($server) {
+            // Set up timer for key expiration
             \Swoole\Timer::tick(1000, function () {
                 $this->keyExpiry->checkExpirations($this->stringStorage);
             });
+
+            // Start persistence timers
+            $this->persistenceManager->startPersistenceTimers();
+
+            echo "Timers initialized\n";
         });
 
         // Start the server
