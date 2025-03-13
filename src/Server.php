@@ -12,6 +12,10 @@ use Ody\SwooleRedis\Storage\KeyExpiry;
 use Ody\SwooleRedis\Storage\StringStorage;
 use Ody\SwooleRedis\Storage\HashStorage;
 use Ody\SwooleRedis\Storage\ListStorage;
+use Ody\SwooleRedis\Storage\SetStorage;
+use Ody\SwooleRedis\Storage\SortedSetStorage;
+use Ody\SwooleRedis\Storage\BitMapStorage;
+use Ody\SwooleRedis\Storage\HyperLogLogStorage;
 use Swoole\Server as SwooleServer;
 
 class Server
@@ -23,9 +27,14 @@ class Server
     private StringStorage $stringStorage;
     private HashStorage $hashStorage;
     private ListStorage $listStorage;
+    private SetStorage $setStorage;
+    private SortedSetStorage $sortedSetStorage;
+    private BitMapStorage $bitMapStorage;
+    private HyperLogLogStorage $hyperLogLogStorage;
     private KeyExpiry $keyExpiry;
     private PersistenceManager $persistenceManager;
     private array $subscribers = [];
+    private array $clientTransactions = [];
     private string $host;
     private int $port;
     private array $config;
@@ -45,15 +54,23 @@ class Server
         $stringTableSize = $this->config['memory_string_table_size'] ?? 0;
         $hashTableSize = $this->config['memory_hash_table_size'] ?? 0;
         $listTableSize = $this->config['memory_list_table_size'] ?? 0;
+        $setTableSize = $this->config['memory_set_table_size'] ?? 0;
+        $sortedSetTableSize = $this->config['memory_zset_table_size'] ?? 0;
         $expiryTableSize = $this->config['memory_expiry_table_size'] ?? 0;
 
         // Initialize components with configured sizes (or auto-detect if 0)
         $this->stringStorage = new StringStorage($stringTableSize);
         $this->hashStorage = new HashStorage($hashTableSize);
         $this->listStorage = new ListStorage($listTableSize);
+        $this->setStorage = new SetStorage($setTableSize);
+        $this->sortedSetStorage = new SortedSetStorage($sortedSetTableSize);
         $this->keyExpiry = new KeyExpiry($expiryTableSize);
         $this->commandParser = new CommandParser();
         $this->responseFormatter = new ResponseFormatter();
+
+        // Initialize bitmap and hyperloglog (which depend on string storage)
+        $this->bitMapStorage = new BitMapStorage($this->stringStorage);
+        $this->hyperLogLogStorage = new HyperLogLogStorage($this->stringStorage);
 
         // Initialize persistence manager
         $persistenceConfig = [
@@ -270,7 +287,7 @@ class Server
 
         // Get Swoole server configuration
         $workerNum = $this->config['worker_num'] ?? swoole_cpu_num();
-        $maxConn = $this->config['max_conn'] ?? 10000;
+        $maxConn = $this->config['max_conn'] ?? 1024;
         $backlog = $this->config['backlog'] ?? 128;
 
         $this->server->set([
@@ -321,6 +338,11 @@ class Server
                 }
             }
 
+            // Clear any transactions for this client
+            if (isset($this->clientTransactions[$fd])) {
+                unset($this->clientTransactions[$fd]);
+            }
+
             // Clean up buffer
             unset($this->clientBuffers[$fd]);
 
@@ -345,6 +367,17 @@ class Server
             echo "Current memory usage: " . round($memory, 2) . " MB\n";
             echo "RESP protocol support enabled\n";
             echo "Timers initialized\n";
+
+            // Log enabled data structures
+            echo "Data structures initialized:\n";
+            echo "- Strings\n";
+            echo "- Lists\n";
+            echo "- Hashes\n";
+            echo "- Sets\n";
+            echo "- Sorted Sets\n";
+            echo "- Bitmaps\n";
+            echo "- HyperLogLogs\n";
+            echo "Transactions support enabled\n";
         });
 
         // Start the server

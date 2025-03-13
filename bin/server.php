@@ -1,8 +1,8 @@
 <?php
 
 /**
- * SwooleRedis server startup script with improved signal handling
- * and RESP protocol support
+ * SwooleRedis server startup script with improved signal handling,
+ * RESP protocol support and enhanced data structures
  */
 
 use Ody\SwooleRedis\Server;
@@ -23,7 +23,8 @@ $shortOptions = 'h:p:d:m:';
 $longOptions = [
     'host:', 'port:', 'dir:', 'memory-limit:',
     'memory-string-table-size:', 'memory-hash-table-size:',
-    'memory-list-table-size:', 'memory-expiry-table-size:',
+    'memory-list-table-size:', 'memory-set-table-size:',
+    'memory-zset-table-size:', 'memory-expiry-table-size:',
     'rdb-enabled::', 'rdb-filename:', 'rdb-save-seconds:', 'rdb-min-changes:',
     'aof-enabled::', 'aof-filename:', 'aof-fsync:', 'aof-rewrite-seconds:', 'aof-rewrite-min-size:',
     'worker-num:', 'max-conn:', 'backlog:',
@@ -69,6 +70,12 @@ if (isset($options['memory-hash-table-size'])) {
 }
 if (isset($options['memory-list-table-size'])) {
     $config['memory_list_table_size'] = (int)$options['memory-list-table-size'];
+}
+if (isset($options['memory-set-table-size'])) {
+    $config['memory_set_table_size'] = (int)$options['memory-set-table-size'];
+}
+if (isset($options['memory-zset-table-size'])) {
+    $config['memory_zset_table_size'] = (int)$options['memory-zset-table-size'];
 }
 if (isset($options['memory-expiry-table-size'])) {
     $config['memory_expiry_table_size'] = (int)$options['memory-expiry-table-size'];
@@ -150,8 +157,8 @@ echo <<<'EOT'
 EOT;
 
 echo "\n";
-echo "SwooleRedis Server v1.0.0 with RESP Protocol Support\n";
-echo "=================================================\n";
+echo "SwooleRedis Server v1.1.0 with Enhanced Data Structures\n";
+echo "====================================================\n";
 echo "Server will listen on: {$host}:{$port}\n";
 echo "Persistence directory: {$config['persistence_dir']}\n";
 echo "\n";
@@ -166,6 +173,12 @@ if (isset($config['memory_hash_table_size'])) {
 }
 if (isset($config['memory_list_table_size'])) {
     echo "List meta table size: " . $config['memory_list_table_size'] . " entries\n";
+}
+if (isset($config['memory_set_table_size'])) {
+    echo "Set table size: " . $config['memory_set_table_size'] . " entries\n";
+}
+if (isset($config['memory_zset_table_size'])) {
+    echo "Sorted Set table size: " . $config['memory_zset_table_size'] . " entries\n";
 }
 if (isset($config['memory_expiry_table_size'])) {
     echo "Expiry table size: " . $config['memory_expiry_table_size'] . " entries\n";
@@ -182,6 +195,14 @@ if ($debugConfig['debug_enabled']) {
 }
 
 echo "\n";
+echo "Enhanced Data Structures: Enabled\n";
+echo "- Sets (SADD, SMEMBERS, etc.)\n";
+echo "- Sorted Sets (ZADD, ZRANGE, etc.)\n";
+echo "- Bitmaps (SETBIT, GETBIT, etc.)\n";
+echo "- HyperLogLogs (PFADD, PFCOUNT, etc.)\n";
+echo "- Transactions (MULTI, EXEC, etc.)\n";
+
+echo "\n";
 echo "How to stop the server:\n";
 echo "1. Press Ctrl+C in this terminal\n";
 echo "2. Use 'SHUTDOWN' command from a Redis client\n";
@@ -194,6 +215,8 @@ echo "For more specific control, use:\n";
 echo "  --memory-string-table-size=1024     (for string table)\n";
 echo "  --memory-hash-table-size=1024       (for hash table)\n";
 echo "  --memory-list-table-size=1024       (for list table)\n";
+echo "  --memory-set-table-size=1024        (for set table)\n";
+echo "  --memory-zset-table-size=1024       (for sorted set table)\n";
 echo "  --memory-expiry-table-size=1024     (for expiry table)\n";
 echo "\n";
 echo "Debug configuration:\n";

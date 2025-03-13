@@ -152,17 +152,28 @@ try {
     echo "Example 4: Pipeline commands\n";
     echo "--------------------------\n";
 
-    $redis->multi(Redis::PIPELINE);
-    $redis->set('pipeline:key1', 'value1');
-    $redis->set('pipeline:key2', 'value2');
-    $redis->set('pipeline:key3', 'value3');
-    $redis->get('pipeline:key1');
-    $redis->get('pipeline:key2');
-    $redis->get('pipeline:key3');
-    $results = $redis->exec();
+    // First check if PIPELINE is supported in this environment
+    try {
+        $redis->multi(Redis::PIPELINE);
+        $redis->set('pipeline:key1', 'value1');
+        $redis->set('pipeline:key2', 'value2');
+        $redis->set('pipeline:key3', 'value3');
+        $redis->get('pipeline:key1');
+        $redis->get('pipeline:key2');
+        $redis->get('pipeline:key3');
+        $results = $redis->exec();
 
-    echo "Pipeline results:\n";
-    print_r($results);
+        if ($results === false) {
+            echo "Pipeline execution failed - pipelines may not be fully supported yet.\n";
+        } else {
+            echo "Pipeline results:\n";
+            print_r($results);
+        }
+    } catch (Exception $e) {
+        echo "Pipeline error: " . $e->getMessage() . "\n";
+        echo "Note: Pipeline support may not be fully implemented yet.\n";
+    }
+
     echo "\n";
 
     // Example 5: Working with binary data

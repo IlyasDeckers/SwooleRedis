@@ -25,13 +25,18 @@ class MemoryManager
         $availableMemory = self::getAvailableMemory();
 
         // Determine what percentage of memory to use based on table type
+        // More conservative percentages to avoid excessive allocation
         $percentages = [
-            'string' => 0.15,   // 15% for string storage
-            'hash' => 0.15,     // 15% for hash storage
-            'list' => 0.05,     // 5% for list metadata
-            'list_items' => 0.3, // 30% for list items
-            'expiry' => 0.05,   // 5% for expiry info
-            'default' => 0.1    // 10% for any other tables
+            'string' => 0.08,    // 8% for string storage (reduced from 15%)
+            'hash' => 0.08,      // 8% for hash storage (reduced from 15%)
+            'list' => 0.03,      // 3% for list metadata (reduced from 5%)
+            'list_items' => 0.15, // 15% for list items (reduced from 30%)
+            'set' => 0.05,       // 5% for set metadata
+            'set_members' => 0.10, // 10% for set members
+            'zset' => 0.05,      // 5% for sorted set metadata
+            'zset_members' => 0.10, // 10% for sorted set members
+            'expiry' => 0.03,    // 3% for expiry info (reduced from 5%)
+            'default' => 0.05    // 5% for any other tables (reduced from 10%)
         ];
 
         $percentage = $percentages[$tableType] ?? $percentages['default'];
@@ -42,10 +47,14 @@ class MemoryManager
 
         // Estimate average row size based on table type (in bytes)
         $avgRowSizes = [
-            'string' => 1200,  // key + 1KB value + overhead
+            'string' => 4200,  // key + 4KB value + overhead (increased from 1200)
             'hash' => 300,     // key + field + value + overhead
             'list' => 80,      // Metadata is smaller
             'list_items' => 1200, // key + value + overhead
+            'set' => 80,       // Metadata is smaller
+            'set_members' => 600, // key + member + overhead
+            'zset' => 80,      // Metadata is smaller
+            'zset_members' => 700, // key + member + score + overhead
             'expiry' => 40,    // key + timestamp
             'default' => 500   // default estimation
         ];
@@ -55,11 +64,20 @@ class MemoryManager
         // Calculate number of rows
         $rowCount = (int)($memoryToUse / $rowSize);
 
-        // Set some reasonable bounds
-        $minRows = 1024;  // At least 1K rows
-        $maxRows = 10 * 1024 * 1024;  // Max 10M rows to prevent excessive allocation
+        // Set some reasonable bounds - make minimum smaller and max much smaller
+        $minRows = 128;  // Reduced from 1024
+        $maxRows = 1024 * 1024;  // Reduced from 10M to 1M
 
-        return max($minRows, min($rowCount, $maxRows));
+        // Clamp the result between min and max
+        $result = max($minRows, min($rowCount, $maxRows));
+
+        // For non-dev environments, apply a safety factor
+        if (!defined('SWOOLE_REDIS_DEV_MODE') || !SWOOLE_REDIS_DEV_MODE) {
+            // Start with more conservative values, can be increased later
+            return min($result, 4096); // Limit to 4K rows initially
+        }
+
+        return $result;
     }
 
     /**
@@ -70,7 +88,7 @@ class MemoryManager
     private static function getAvailableMemory(): int
     {
         // Default to a conservative value if we can't determine
-        $defaultMemory = 512 * 1024 * 1024; // 512 MB
+        $defaultMemory = 256 * 1024 * 1024; // 256 MB (reduced from 512 MB)
 
         if (PHP_OS_FAMILY === 'Linux') {
             // Try to get from /proc/meminfo
@@ -88,8 +106,8 @@ class MemoryManager
 
                 // Last resort: use MemTotal and take a percentage
                 if (preg_match('/MemTotal:\s+(\d+)\s+kB/i', $memInfo, $matches)) {
-                    // Use 40% of total as a conservative estimate
-                    return (int)($matches[1] * 1024 * 0.4);
+                    // Use 25% of total as a conservative estimate (reduced from 40%)
+                    return (int)($matches[1] * 1024 * 0.25);
                 }
             }
         }
@@ -97,8 +115,8 @@ class MemoryManager
         // For other OS, use PHP's memory_limit as a guide
         $memoryLimit = self::parseMemoryLimit();
         if ($memoryLimit > 0) {
-            // Use 40% of PHP's memory limit
-            return (int)($memoryLimit * 0.4);
+            // Use 25% of PHP's memory limit (reduced from 40%)
+            return (int)($memoryLimit * 0.25);
         }
 
         return $defaultMemory;
@@ -115,7 +133,7 @@ class MemoryManager
 
         if ($limit === '-1') {
             // Unlimited, use a default value
-            return 1024 * 1024 * 1024; // 1 GB
+            return 512 * 1024 * 1024; // 512 MB (reduced from 1 GB)
         }
 
         $value = (int)$limit;
