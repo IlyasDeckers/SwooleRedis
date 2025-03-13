@@ -2,6 +2,8 @@
 
 namespace Ody\SwooleRedis\Storage;
 
+use Ody\SwooleRedis\MemoryManager;
+
 /**
  * Storage for string values
  */
@@ -9,8 +11,11 @@ class StringStorage implements StorageInterface
 {
     private \Swoole\Table $table;
 
-    public function __construct(int $tableSize = 1024 * 1024)
+    public function __construct(int $tableSize = 0)
     {
+        // Use MemoryManager to determine table size
+        $tableSize = MemoryManager::getTableSize('string', $tableSize > 0 ? $tableSize : null);
+
         // Initialize table for string storage
         $this->table = new \Swoole\Table($tableSize);
         $this->table->column('value', \Swoole\Table::TYPE_STRING, 1024); // 1KB max value size

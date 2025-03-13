@@ -2,6 +2,7 @@
 
 namespace Ody\SwooleRedis\Storage;
 
+use Ody\SwooleRedis\MemoryManager;
 use Swoole\Table;
 
 /**
@@ -12,17 +13,21 @@ class ListStorage implements StorageInterface
     private Table $metaTable;
     private Table $itemTable;
 
-    public function __construct(int $tableSize = 1024 * 1024)
+    public function __construct(int $tableSize = 0)
     {
+        // Use MemoryManager to determine table sizes
+        $metaTableSize = MemoryManager::getTableSize('list', $tableSize > 0 ? $tableSize : null);
+        $itemTableSize = MemoryManager::getTableSize('list_items', $tableSize > 0 ? $tableSize * 10 : null);
+
         // Initialize metadata table for lists
-        $this->metaTable = new Table($tableSize);
+        $this->metaTable = new Table($metaTableSize);
         $this->metaTable->column('head', Table::TYPE_INT);
         $this->metaTable->column('tail', Table::TYPE_INT);
         $this->metaTable->column('size', Table::TYPE_INT);
         $this->metaTable->create();
 
         // Initialize item table for list elements
-        $this->itemTable = new Table($tableSize * 10); // More items than lists
+        $this->itemTable = new Table($itemTableSize);
         $this->itemTable->column('list_key', Table::TYPE_STRING, 128);
         $this->itemTable->column('index', Table::TYPE_INT);
         $this->itemTable->column('value', Table::TYPE_STRING, 1024);

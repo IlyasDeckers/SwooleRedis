@@ -2,6 +2,8 @@
 
 namespace Ody\SwooleRedis\Storage;
 
+use Ody\SwooleRedis\MemoryManager;
+
 /**
  * Storage for hash values
  */
@@ -9,8 +11,11 @@ class HashStorage implements StorageInterface
 {
     private \Swoole\Table $table;
 
-    public function __construct(int $tableSize = 1024 * 1024)
+    public function __construct(int $tableSize = 0)
     {
+        // Use MemoryManager to determine table size
+        $tableSize = MemoryManager::getTableSize('hash', $tableSize > 0 ? $tableSize : null);
+
         // Initialize table for hash storage
         $this->table = new \Swoole\Table($tableSize);
         $this->table->column('key', \Swoole\Table::TYPE_STRING, 128);    // Parent key name

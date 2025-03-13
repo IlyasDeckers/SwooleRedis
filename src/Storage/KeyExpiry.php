@@ -2,6 +2,8 @@
 
 namespace Ody\SwooleRedis\Storage;
 
+use Ody\SwooleRedis\MemoryManager;
+
 /**
  * Manages key expiration
  */
@@ -9,8 +11,11 @@ class KeyExpiry
 {
     private \Swoole\Table $expiryTable;
 
-    public function __construct(int $tableSize = 1024 * 1024)
+    public function __construct(int $tableSize = 0)
     {
+        // Use MemoryManager to determine table size
+        $tableSize = MemoryManager::getTableSize('expiry', $tableSize > 0 ? $tableSize : null);
+
         // Initialize table for key expiration
         $this->expiryTable = new \Swoole\Table($tableSize);
         $this->expiryTable->column('expire_at', \Swoole\Table::TYPE_INT);

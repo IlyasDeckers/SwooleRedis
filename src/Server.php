@@ -39,11 +39,17 @@ class Server
 
     private function initialize(): void
     {
-        // Initialize components
-        $this->stringStorage = new StringStorage(1024);
-        $this->hashStorage = new HashStorage(1024);
-        $this->listStorage = new ListStorage(1024);
-        $this->keyExpiry = new KeyExpiry(1024);
+        // Get memory configuration
+        $stringTableSize = $this->config['memory_string_table_size'] ?? 0;
+        $hashTableSize = $this->config['memory_hash_table_size'] ?? 0;
+        $listTableSize = $this->config['memory_list_table_size'] ?? 0;
+        $expiryTableSize = $this->config['memory_expiry_table_size'] ?? 0;
+
+        // Initialize components with configured sizes (or auto-detect if 0)
+        $this->stringStorage = new StringStorage($stringTableSize);
+        $this->hashStorage = new HashStorage($hashTableSize);
+        $this->listStorage = new ListStorage($listTableSize);
+        $this->keyExpiry = new KeyExpiry($expiryTableSize);
         $this->commandParser = new CommandParser();
         $this->responseFormatter = new ResponseFormatter();
 
@@ -164,10 +170,16 @@ class Server
 
         // Initialize Swoole server
         $this->server = new SwooleServer($this->host, $this->port, SWOOLE_BASE);
+
+        // Get Swoole server configuration
+        $workerNum = $this->config['worker_num'] ?? swoole_cpu_num();
+        $maxConn = $this->config['max_conn'] ?? 10000;
+        $backlog = $this->config['backlog'] ?? 128;
+
         $this->server->set([
-            'worker_num' => swoole_cpu_num(),
-            'max_conn' => 10000,
-            'backlog' => 128,
+            'worker_num' => $workerNum,
+            'max_conn' => $maxConn,
+            'backlog' => $backlog,
         ]);
 
         // Set up event handlers
@@ -231,6 +243,9 @@ class Server
             // Start persistence timers
             $this->persistenceManager->startPersistenceTimers();
 
+            // Log memory usage
+            $memory = memory_get_usage() / 1024 / 1024;
+            echo "Current memory usage: " . round($memory, 2) . " MB\n";
             echo "Timers initialized\n";
         });
 
