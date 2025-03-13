@@ -9,9 +9,15 @@ SwooleRedis is a Redis-like server implementation using Swoole's high-performanc
 - **Data Structures**:
     - **Lists**: LPUSH, RPUSH, LPOP, RPOP operations
     - **Hashes**: HSET, HGET, HDEL operations
+    - **Sets**: SADD, SCARD, SMEMBERS, SINTER, SUNION, SDIFF operations
+    - **Sorted Sets**: ZADD, ZRANGE, ZRANGEBYSCORE, ZREM operations
+    - **Bitmaps**: GETBIT, SETBIT, BITCOUNT, BITOP, BITPOS operations
+    - **HyperLogLog**: PFADD, PFCOUNT, PFMERGE operations
+- **Transactions**: MULTI, EXEC, DISCARD, WATCH support
 - **Pub/Sub Messaging**: SUBSCRIBE and PUBLISH commands
 - **High Performance**: Uses Swoole's shared memory tables for low-latency operations
 - **Concurrency**: Multi-process architecture supports high concurrency
+- **Persistence**: RDB snapshots and AOF log support
 
 ## Requirements
 
@@ -68,14 +74,153 @@ $client->lPop('mylist');
 $client->hSet('myhash', 'field', 'value');
 $client->hGet('myhash', 'field');
 
+// Set operations
+$client->command("SADD myset apple banana cherry");
+$client->command("SMEMBERS myset");
+
+// Sorted Set operations
+$client->command("ZADD leaderboard 100 player1 75 player2");
+$client->command("ZRANGE leaderboard 0 -1 WITHSCORES");
+
+// Bitmap operations
+$client->command("SETBIT bitmap1 5 1");
+$client->command("GETBIT bitmap1 5");
+
+// HyperLogLog operations
+$client->command("PFADD visitors user1 user2 user3");
+$client->command("PFCOUNT visitors");
+
+// Transaction operations
+$client->command("MULTI");
+$client->command("SET key1 value1");
+$client->command("SET key2 value2");
+$client->command("EXEC");
+
 $client->close();
 ```
 
-See `examples/basic_usage.php` for more examples.
+See the `examples` directory for more detailed examples.
+
+## Enhanced Data Structures
+
+### Sets
+
+Sets are unordered collections of unique strings, useful for membership tests and operations like union, intersection, and difference.
+
+```php
+// Adding elements
+$client->command("SADD myset apple banana cherry");
+
+// Getting all members
+$client->command("SMEMBERS myset");
+
+// Checking membership
+$client->command("SISMEMBER myset apple"); // 1
+$client->command("SISMEMBER myset orange"); // 0
+
+// Set operations
+$client->command("SINTER set1 set2"); // Intersection
+$client->command("SUNION set1 set2"); // Union
+$client->command("SDIFF set1 set2");  // Difference
+
+// Other operations
+$client->command("SCARD myset");      // Count members
+$client->command("SRANDMEMBER myset"); // Random member
+$client->command("SPOP myset");       // Remove and return random member
+```
+
+### Sorted Sets
+
+Sorted sets associate a score with each member, enabling ordered operations and range queries.
+
+```php
+// Adding members with scores
+$client->command("ZADD leaderboard 100 player1 75 player2 150 player3");
+
+// Querying by rank (position)
+$client->command("ZRANGE leaderboard 0 -1 WITHSCORES"); // All members with scores
+$client->command("ZREVRANGE leaderboard 0 -1 WITHSCORES"); // Descending order
+
+// Querying by score
+$client->command("ZRANGEBYSCORE leaderboard 70 120 WITHSCORES");
+$client->command("ZCOUNT leaderboard 70 120"); // Count in score range
+
+// Modifying scores
+$client->command("ZINCRBY leaderboard 25 player2"); // Increment score
+
+// Other operations
+$client->command("ZSCORE leaderboard player1"); // Get score
+$client->command("ZCARD leaderboard"); // Count members
+$client->command("ZREM leaderboard player2"); // Remove member
+```
+
+### Bitmaps
+
+Bitmaps are strings treated as bit arrays, enabling efficient bit operations and counting.
+
+```php
+// Setting and getting bits
+$client->command("SETBIT bitmap1 5 1"); // Set bit at offset 5 to 1
+$client->command("GETBIT bitmap1 5"); // Get bit at offset 5
+
+// Bit operations
+$client->command("BITCOUNT bitmap1"); // Count set bits
+$client->command("BITOP AND result bitmap1 bitmap2"); // Bitwise AND
+$client->command("BITOP OR result bitmap1 bitmap2"); // Bitwise OR
+$client->command("BITOP XOR result bitmap1 bitmap2"); // Bitwise XOR
+$client->command("BITOP NOT result bitmap1"); // Bitwise NOT
+
+// Position operations
+$client->command("BITPOS bitmap1 1"); // Position of first set bit
+$client->command("BITPOS bitmap1 0"); // Position of first unset bit
+```
+
+### HyperLogLog
+
+HyperLogLog is a probabilistic data structure for cardinality estimation with minimal memory usage.
+
+```php
+// Adding elements
+$client->command("PFADD visitors user1 user2 user3");
+
+// Counting unique elements
+$client->command("PFCOUNT visitors");
+
+// Merging HyperLogLogs
+$client->command("PFMERGE result visitors1 visitors2");
+```
+
+## Transaction Support
+
+SwooleRedis now includes transaction support, allowing multiple commands to be executed atomically.
+
+```php
+// Start a transaction
+$client->command("MULTI");
+
+// Queue commands (returns QUEUED for each command)
+$client->command("SET key1 value1");
+$client->command("SET key2 value2");
+$client->command("INCR counter");
+
+// Execute all commands atomically
+$client->command("EXEC");
+
+// Discard a transaction
+$client->command("MULTI");
+$client->command("SET key1 value");
+$client->command("DISCARD"); // Transaction is cancelled
+
+// Optimistic locking with WATCH
+$client->command("WATCH key1");
+$client->command("MULTI");
+$client->command("SET key1 newvalue");
+$client->command("EXEC"); // Succeeds only if key1 wasn't modified
+```
 
 ## Data Persistence
 
-SwooleRedis now supports data persistence similar to Redis with two complementary methods:
+SwooleRedis supports data persistence similar to Redis with two complementary methods:
 
 ### RDB (Redis Database)
 
@@ -175,6 +320,8 @@ php bin/server.php --memory-limit=256M
 php bin/server.php --memory-string-table-size=10000
 php bin/server.php --memory-hash-table-size=5000
 php bin/server.php --memory-list-table-size=1000
+php bin/server.php --memory-set-table-size=1000
+php bin/server.php --memory-zset-table-size=1000
 php bin/server.php --memory-expiry-table-size=2000
 
 # Combined example for a low-memory environment
@@ -211,7 +358,7 @@ For production environments with specific memory constraints, we recommend start
 SwooleRedis implements a modular architecture:
 
 - **Server**: Main application entry point and event loop
-- **Storage**: Implementations for different data types (strings, lists, hashes)
+- **Storage**: Implementations for different data types (strings, lists, hashes, sets, sorted sets, etc.)
 - **Commands**: Command handlers for Redis protocol operations
 - **Protocol**: Parsers and formatters for Redis protocol
 - **Client**: Simplified client for connecting to the server
@@ -224,11 +371,12 @@ The project leverages Swoole Tables for shared memory storage, which provides:
 
 ## Limitations
 
-This is a simplified implementation for educational purposes and has several limitations:
+This is an educational implementation with several limitations compared to Redis:
 
-- Limited command set compared to Redis
-- Basic protocol implementation (not full RESP)
-- No persistence options
+- Limited command coverage
+- Simplified implementations of some algorithms
+- Basic transaction isolation
+- Limited client-side tooling
 - No clustering or replication
 - Limited security features
 
