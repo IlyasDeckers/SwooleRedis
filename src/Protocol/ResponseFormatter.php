@@ -15,6 +15,8 @@ class ResponseFormatter
      */
     public function simpleString(string $str): string
     {
+        // Ensure no CRLF in simple strings (as per RESP protocol)
+        $str = str_replace(["\r", "\n"], [' ', ' '], $str);
         return "+{$str}\r\n";
     }
 
@@ -22,11 +24,14 @@ class ResponseFormatter
      * Format an error response
      *
      * @param string $message The error message
+     * @param string $prefix Error prefix (default: ERR)
      * @return string Formatted response
      */
-    public function error(string $message): string
+    public function error(string $message, string $prefix = 'ERR'): string
     {
-        return "-ERR {$message}\r\n";
+        // Ensure no CRLF in error messages
+        $message = str_replace(["\r", "\n"], [' ', ' '], $message);
+        return "-{$prefix} {$message}\r\n";
     }
 
     /**
@@ -78,10 +83,41 @@ class ResponseFormatter
                 $response .= $this->array($item);
             } elseif ($item === null) {
                 $response .= "$-1\r\n";
+            } elseif (is_bool($item)) {
+                // Handle boolean values (convert to integers as per Redis convention)
+                $response .= $this->integer($item ? 1 : 0);
+            } elseif (is_float($item)) {
+                // Handle float values (convert to strings as per Redis convention)
+                $response .= $this->bulkString((string)$item);
+            } else {
+                // Convert other types to string
+                $response .= $this->bulkString((string)$item);
             }
         }
 
         return $response;
+    }
+
+    /**
+     * Format a nested array response (multi-bulk)
+     * Used for multi-key responses like EXEC, SCAN, etc.
+     *
+     * @param array $arrays Array of arrays
+     * @return string Formatted response
+     */
+    public function nestedArray(array $arrays): string
+    {
+        return $this->array($arrays);
+    }
+
+    /**
+     * Format a nil response (null array)
+     *
+     * @return string Formatted response
+     */
+    public function nilArray(): string
+    {
+        return "*-1\r\n";
     }
 
     /**
@@ -105,5 +141,27 @@ class ResponseFormatter
         }
 
         return $response;
+    }
+
+    /**
+     * Format a binary-safe bulk string response
+     * This is useful for handling binary data like images, etc.
+     *
+     * @param string|null $data The binary data to format, or null for nil response
+     * @return string Formatted response
+     */
+    public function binaryBulkString(?string $data): string
+    {
+        return $this->bulkString($data);
+    }
+
+    /**
+     * Format a null response
+     *
+     * @return string Formatted response
+     */
+    public function nullResponse(): string
+    {
+        return "$-1\r\n";
     }
 }

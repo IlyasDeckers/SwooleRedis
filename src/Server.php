@@ -29,6 +29,8 @@ class Server
     private string $host;
     private int $port;
     private array $config;
+    // Buffer for incomplete RESP data
+    private array $clientBuffers = [];
 
     public function __construct(string $host = '127.0.0.1', int $port = 6380, array $config = [])
     {
@@ -88,6 +90,101 @@ class Server
 
         // Load data from persistence storage
         $this->persistenceManager->loadData();
+    }
+
+    /**
+     * Process a complete RESP command
+     *
+     * @param int $fd Client connection ID
+     * @param string $data Command data
+     */
+    private function processCommand(int $fd, string $data): void
+    {
+        $command = $this->commandParser->parse($data);
+
+        if (!$command) {
+            $this->server->send($fd, $this->responseFormatter->error("Invalid command format"));
+            return;
+        }
+
+        $handler = $this->commandFactory->create($command['command']);
+
+        // For PubSub commands, we need to set the server instance
+        if ($handler instanceof PubSubCommands) {
+            $handler->setServer($this->server);
+        }
+
+        // For ServerAdmin commands, set the server instance
+        if ($handler instanceof ServerAdminCommands) {
+            $handler->setServer($this);
+        }
+
+        // Need to pass the original command name as the first argument
+        $args = array_merge([$command['command']], $command['args']);
+        $response = $handler->execute($fd, $args);
+
+        // Log the command for persistence
+        $this->persistenceManager->logWriteCommand($command['command'], $command['args']);
+
+        $this->server->send($fd, $response);
+    }
+
+    /**
+     * Check if a RESP message is complete
+     *
+     * @param string $data The data to check
+     * @return bool True if the data forms a complete RESP message
+     */
+    private function isCompleteRespMessage(string $data): bool
+    {
+        // If it doesn't start with a RESP type indicator, use the old parser
+        if (empty($data) || !in_array($data[0], ['+', '-', ':', '$', '*'])) {
+            return true;
+        }
+
+        try {
+            // Simple validation for complete RESP message
+            if ($data[0] === '*') { // Array
+                $lines = explode("\r\n", $data);
+                if (count($lines) < 2) return false;
+
+                $count = (int)substr($lines[0], 1);
+                if ($count < 0) return true; // Null array
+
+                // Count bulk strings and their contents
+                $i = 1;
+                for ($j = 0; $j < $count; $j++) {
+                    if ($i >= count($lines)) return false;
+
+                    if (substr($lines[$i], 0, 1) !== '$') return false;
+                    $bulkLen = (int)substr($lines[$i], 1);
+
+                    if ($bulkLen < 0) {
+                        // Null bulk string
+                        $i++;
+                    } else {
+                        // Regular bulk string
+                        $i += 2; // Skip length line and content line
+                    }
+                }
+
+                return $i <= count($lines);
+            } else if ($data[0] === '$') { // Bulk String
+                $lines = explode("\r\n", $data, 3);
+                if (count($lines) < 2) return false;
+
+                $length = (int)substr($lines[0], 1);
+                if ($length < 0) return true; // Null bulk string
+
+                return strlen($data) >= strlen($lines[0]) + 2 + $length + 2;
+            } else {
+                // Simple string, error, or integer - just check for \r\n
+                return strpos($data, "\r\n") !== false;
+            }
+        } catch (\Throwable $e) {
+            // If any error occurs, consider the message incomplete
+            return false;
+        }
     }
 
     /**
@@ -180,41 +277,37 @@ class Server
             'worker_num' => $workerNum,
             'max_conn' => $maxConn,
             'backlog' => $backlog,
+            'open_eof_check' => false, // We'll handle message boundaries ourselves
+            'open_eof_split' => false,
+            'package_max_length' => 16 * 1024 * 1024, // 16MB max package
         ]);
 
         // Set up event handlers
         $this->server->on('connect', function ($server, $fd) {
+            // Initialize buffer for this connection
+            $this->clientBuffers[$fd] = '';
             echo "Client connected: {$fd}\n";
         });
 
         $this->server->on('receive', function ($server, $fd, $reactorId, $data) {
-            $command = $this->commandParser->parse($data);
-
-            if (!$command) {
-                $server->send($fd, $this->responseFormatter->error("Invalid command format"));
-                return;
+            // Append new data to the client's buffer
+            if (!isset($this->clientBuffers[$fd])) {
+                $this->clientBuffers[$fd] = '';
             }
 
-            $handler = $this->commandFactory->create($command['command']);
+            $this->clientBuffers[$fd] .= $data;
 
-            // For PubSub commands, we need to set the server instance
-            if ($handler instanceof PubSubCommands) {
-                $handler->setServer($server);
+            // Process as many complete commands as possible
+            while (!empty($this->clientBuffers[$fd])) {
+                if ($this->isCompleteRespMessage($this->clientBuffers[$fd])) {
+                    $command = $this->clientBuffers[$fd];
+                    $this->clientBuffers[$fd] = '';
+                    $this->processCommand($fd, $command);
+                } else {
+                    // Wait for more data
+                    break;
+                }
             }
-
-            // For ServerAdmin commands, set the server instance
-            if ($handler instanceof ServerAdminCommands) {
-                $handler->setServer($this);
-            }
-
-            // Need to pass the original command name as the first argument
-            $args = array_merge([$command['command']], $command['args']);
-            $response = $handler->execute($fd, $args);
-
-            // Log the command for persistence
-            $this->persistenceManager->logWriteCommand($command['command'], $command['args']);
-
-            $server->send($fd, $response);
         });
 
         $this->server->on('close', function ($server, $fd) {
@@ -227,6 +320,10 @@ class Server
                     }
                 }
             }
+
+            // Clean up buffer
+            unset($this->clientBuffers[$fd]);
+
             echo "Client disconnected: {$fd}\n";
         });
 
@@ -246,6 +343,7 @@ class Server
             // Log memory usage
             $memory = memory_get_usage() / 1024 / 1024;
             echo "Current memory usage: " . round($memory, 2) . " MB\n";
+            echo "RESP protocol support enabled\n";
             echo "Timers initialized\n";
         });
 

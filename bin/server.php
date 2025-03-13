@@ -2,9 +2,11 @@
 
 /**
  * SwooleRedis server startup script with improved signal handling
+ * and RESP protocol support
  */
 
 use Ody\SwooleRedis\Server;
+use Ody\SwooleRedis\DebugLogger;
 
 // Load autoloader
 require __DIR__ . '/../vendor/autoload.php';
@@ -24,7 +26,8 @@ $longOptions = [
     'memory-list-table-size:', 'memory-expiry-table-size:',
     'rdb-enabled::', 'rdb-filename:', 'rdb-save-seconds:', 'rdb-min-changes:',
     'aof-enabled::', 'aof-filename:', 'aof-fsync:', 'aof-rewrite-seconds:', 'aof-rewrite-min-size:',
-    'worker-num:', 'max-conn:', 'backlog:'
+    'worker-num:', 'max-conn:', 'backlog:',
+    'debug::', 'debug-log-file:', 'debug-components:', 'debug-max-log-size:'
 ];
 
 $options = getopt($shortOptions, $longOptions);
@@ -116,6 +119,25 @@ if (isset($options['backlog'])) {
     $config['backlog'] = (int)$options['backlog'];
 }
 
+// Debug configuration
+$debugConfig = [
+    'debug_enabled' => isset($options['debug']) ?
+        filter_var($options['debug'], FILTER_VALIDATE_BOOLEAN) : false,
+    'debug_log_file' => $options['debug-log-file'] ?? '/tmp/swoole_redis_debug.log',
+    'debug_max_log_size' => isset($options['debug-max-log-size']) ?
+        (int)$options['debug-max-log-size'] : 10 * 1024 * 1024
+];
+
+if (isset($options['debug-components'])) {
+    $debugConfig['debug_components'] = explode(',', $options['debug-components']);
+}
+
+// Initialize debug logger
+DebugLogger::init($debugConfig);
+
+// Add debug configuration to server config
+$config['debug_enabled'] = $debugConfig['debug_enabled'];
+
 // ASCII art logo for a more professional look
 echo <<<'EOT'
   _____                    _      _____          _ _     
@@ -128,8 +150,8 @@ echo <<<'EOT'
 EOT;
 
 echo "\n";
-echo "SwooleRedis Server v1.0.0\n";
-echo "=========================\n";
+echo "SwooleRedis Server v1.0.0 with RESP Protocol Support\n";
+echo "=================================================\n";
 echo "Server will listen on: {$host}:{$port}\n";
 echo "Persistence directory: {$config['persistence_dir']}\n";
 echo "\n";
@@ -152,6 +174,13 @@ if (isset($config['memory_expiry_table_size'])) {
 echo "\n";
 echo "RDB Persistence: " . ($config['rdb_enabled'] ?? true ? "Enabled" : "Disabled") . "\n";
 echo "AOF Persistence: " . ($config['aof_enabled'] ?? false ? "Enabled" : "Disabled") . "\n";
+echo "RESP Protocol Support: Enabled\n";
+echo "Debug Mode: " . ($debugConfig['debug_enabled'] ? "Enabled" : "Disabled") . "\n";
+if ($debugConfig['debug_enabled']) {
+    echo "Debug Log: " . $debugConfig['debug_log_file'] . "\n";
+    echo "Debug Components: " . implode(', ', $debugConfig['debug_components'] ?? ['all']) . "\n";
+}
+
 echo "\n";
 echo "How to stop the server:\n";
 echo "1. Press Ctrl+C in this terminal\n";
@@ -167,7 +196,17 @@ echo "  --memory-hash-table-size=1024       (for hash table)\n";
 echo "  --memory-list-table-size=1024       (for list table)\n";
 echo "  --memory-expiry-table-size=1024     (for expiry table)\n";
 echo "\n";
+echo "Debug configuration:\n";
+echo "  --debug=true                        (enable debug logging)\n";
+echo "  --debug-log-file=/path/to/log       (set debug log file)\n";
+echo "  --debug-components=resp,server      (comma-separated list of components to debug)\n";
+echo "  --debug-max-log-size=10485760       (maximum log file size in bytes)\n";
+echo "\n";
 echo "Starting server...\n";
+
+if ($debugConfig['debug_enabled']) {
+    DebugLogger::log('system', 'Server starting', ['host' => $host, 'port' => $port]);
+}
 
 // Create and start the server
 $r = new Server($host, $port, $config);
